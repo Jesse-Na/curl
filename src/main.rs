@@ -1,8 +1,8 @@
-use std::{collections::HashMap, fmt::Display, str::FromStr};
 use reqwest;
 use serde_json::Value;
-use url::{Url, ParseError};
+use std::{collections::HashMap, fmt::Display, str::FromStr};
 use structopt::StructOpt;
+use url::{ParseError, Url};
 
 enum Method {
     GET,
@@ -53,7 +53,7 @@ struct Opt {
     method: Method,
 
     #[structopt(long)]
-    json: Option<String>
+    json: Option<String>,
 }
 
 fn main() {
@@ -78,22 +78,31 @@ fn main() {
             if url.scheme() != "http" && url.scheme() != "https" {
                 println!("Error: The URL does not have a valid base protocol.");
             }
-        },
-        Err(e) => {
-            match e {
-                ParseError::RelativeUrlWithoutBase | ParseError::RelativeUrlWithCannotBeABaseBase | ParseError::SetHostOnCannotBeABaseUrl => println!("Error: The URL does not have a valid base protocol."),
-                ParseError::InvalidIpv4Address => println!("Error: The URL contains an invalid IPv4 address."),
-                ParseError::InvalidIpv6Address => println!("Error: The URL contains an invalid IPv6 address."),
-                ParseError::InvalidPort => println!("Error: The URL contains an invalid port number."),
-                _ => println!("Error: {e}"),
-            }
         }
+        Err(e) => match e {
+            ParseError::RelativeUrlWithoutBase
+            | ParseError::RelativeUrlWithCannotBeABaseBase
+            | ParseError::SetHostOnCannotBeABaseUrl => {
+                println!("Error: The URL does not have a valid base protocol.")
+            }
+            ParseError::InvalidIpv4Address => {
+                println!("Error: The URL contains an invalid IPv4 address.")
+            }
+            ParseError::InvalidIpv6Address => {
+                println!("Error: The URL contains an invalid IPv6 address.")
+            }
+            ParseError::InvalidPort => println!("Error: The URL contains an invalid port number."),
+            _ => println!("Error: {e}"),
+        },
     };
 
     match make_request(opt) {
         Ok(resp) => {
             if !resp.status().is_success() {
-                println!("Error: Request failed with status code: {}.", resp.status().as_u16());
+                println!(
+                    "Error: Request failed with status code: {}.",
+                    resp.status().as_u16()
+                );
                 return;
             }
 
@@ -104,11 +113,11 @@ fn main() {
                 Ok(json) => {
                     println!("Response body (JSON with sorted keys):");
                     println!("{:#}", json);
-                },
+                }
                 Err(_) => {
                     println!("Response body:");
                     println!("{}", body.trim());
-                },
+                }
             };
         }
         Err(e) => {
@@ -132,26 +141,20 @@ fn make_request(opt: Opt) -> Result<reqwest::blocking::Response, reqwest::Error>
 
         let client = reqwest::blocking::Client::new();
 
-        let resp = client.post(&opt.url)
-            .json(&json)
-            .send()?;
+        let resp = client.post(&opt.url).json(&json).send()?;
 
         return Ok(resp);
     }
 
     // Non-JSON request
     let resp = match opt.method {
-        Method::GET => {
-            reqwest::blocking::get(&opt.url)?
-        },
+        Method::GET => reqwest::blocking::get(&opt.url)?,
         Method::POST => {
             let client = reqwest::blocking::Client::new();
             let data = opt.data.unwrap();
             let params = parse_params(&data);
 
-            client.post(&opt.url)
-                .form(&params)
-                .send()?
+            client.post(&opt.url).form(&params).send()?
         }
     };
 
