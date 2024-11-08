@@ -51,37 +51,42 @@ struct Opt {
 
     #[structopt(short = "X", default_value = "GET")]
     method: Method,
+
+    #[structopt(long)]
+    json: Option<String>
 }
 
 fn main() {
     let opt = Opt::from_args();
 
     println!("Requesting URL: {}", &opt.url);
-    println!("Method: {}", opt.method);
 
-    if let Some(data) = &opt.data {
-        println!("Data: {}", data);
+    if let Some(json) = &opt.json {
+        println!("Method: {}", Method::POST);
+        println!("JSON: {}", json);
+    } else {
+        println!("Method: {}", opt.method);
+
+        if let Some(data) = &opt.data {
+            println!("Data: {}", data);
+        }
     }
 
-    let url = match Url::parse(&opt.url) {
+    match Url::parse(&opt.url) {
         Ok(url) => {
             // Restrict to HTTP and HTTPS
             if url.scheme() != "http" && url.scheme() != "https" {
                 println!("Error: The URL does not have a valid base protocol.");
-                return;
             }
-
-            url
         },
         Err(e) => {
             match e {
                 ParseError::RelativeUrlWithoutBase | ParseError::RelativeUrlWithCannotBeABaseBase | ParseError::SetHostOnCannotBeABaseUrl => println!("Error: The URL does not have a valid base protocol."),
-                ParseError::InvalidIpv4Address | ParseError::InvalidIpv6Address => println!("Error: The URL contains an invalid IPv6 address."),
+                ParseError::InvalidIpv4Address => println!("Error: The URL contains an invalid IPv4 address."),
+                ParseError::InvalidIpv6Address => println!("Error: The URL contains an invalid IPv6 address."),
                 ParseError::InvalidPort => println!("Error: The URL contains an invalid port number."),
                 _ => println!("Error: {e}"),
             }
-
-            return;
         }
     };
 
@@ -95,18 +100,16 @@ fn main() {
             let body = resp.text().unwrap();
 
             // Check if response is JSON
-            let v: Value = match serde_json::from_str(&body) {
-                Ok(json) => json,
-                Err(e) => Value::Null,
+            match serde_json::from_str::<Value>(&body) {
+                Ok(json) => {
+                    println!("Response body (JSON with sorted keys):");
+                    println!("{:#}", json);
+                },
+                Err(_) => {
+                    println!("Response body:");
+                    println!("{}", body.trim());
+                },
             };
-
-            if v.is_null() {
-                println!("Response body:");
-                println!("{}", body);
-            } else {
-                println!("Response JSON:");
-                println!("{:#?}", v);
-            }
         }
         Err(e) => {
             if e.is_timeout() || e.is_connect() {
@@ -118,6 +121,25 @@ fn main() {
 }
 
 fn make_request(opt: Opt) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    // JSON request
+    if let Some(json) = opt.json {
+        let json: Value = match serde_json::from_str(&json) {
+            Ok(json) => json,
+            Err(e) => {
+                panic!("Invalid JSON: {:#?}", e);
+            }
+        };
+
+        let client = reqwest::blocking::Client::new();
+
+        let resp = client.post(&opt.url)
+            .json(&json)
+            .send()?;
+
+        return Ok(resp);
+    }
+
+    // Non-JSON request
     let resp = match opt.method {
         Method::GET => {
             reqwest::blocking::get(&opt.url)?
@@ -142,7 +164,9 @@ fn parse_params(data: &str) -> HashMap<&str, &str> {
     for param in data.split('&') {
         let parts: Vec<&str> = param.split('=').collect();
 
-        params.insert(parts[0], parts[1]);
+        if parts.len() >= 2 {
+            params.insert(parts[0], parts[1]);
+        }
     }
 
     params
